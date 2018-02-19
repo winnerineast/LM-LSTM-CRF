@@ -1,8 +1,12 @@
-# LM-LSTM-CRF [![Documentation Status](https://readthedocs.org/projects/lm-lstm-crf/badge/?version=latest)](http://lm-lstm-crf.readthedocs.io/en/latest/?badge=latest)
+# LM-LSTM-CRF 
 
-This project provides high-performance character-aware sequence labeling tools and tutorials. Model details can be accessed [here](http://arxiv.org/abs/1709.04109), and the implementation is based on the PyTorch library.
+[![Documentation Status](https://readthedocs.org/projects/lm-lstm-crf/badge/?version=latest)](http://lm-lstm-crf.readthedocs.io/en/latest/?badge=latest)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Insight.io](https://insight.io/repoBadge/github.com/LiyuanLucasLiu/LM-LSTM-CRF)](https://insight.io/github.com/LiyuanLucasLiu/LM-LSTM-CRF)
 
-LM-LSTM-CRF achieves F1 score of 91.71+/-0.10 on the CoNLL 2003 NER dataset, without using any additional corpus or resource.
+This project provides high-performance character-aware sequence labeling tools, including [Training](#usage), [Evaluation](#evaluation) and [Prediction](#prediction). 
+
+Details about LM-LSTM-CRF can be accessed [here](http://arxiv.org/abs/1709.04109), and the implementation is based on the PyTorch library. 
 
 The documents would be available [here](http://lm-lstm-crf.readthedocs.io/en/latest/).
 
@@ -13,6 +17,7 @@ The documents would be available [here](http://lm-lstm-crf.readthedocs.io/en/lat
 - [Data](#data)
 - [Usage](#usage)
 - [Benchmarks](#benchmarks)
+- [Pretrained model](#pretrained-model)
 
 ## Model Notes
 
@@ -96,12 +101,12 @@ The default running commands for NER and POS tagging, and NP Chunking are:
 
 - Named Entity Recognition (NER):
 ```
-python train_wc.py --train_file ./data/ner/train.txt --dev_file ./data/ner/testa.txt --test_file ./data/ner/testb.txt --checkpoint ./checkpoint/ner_ --caseless --fine_tune --high_way --co_train
+python train_wc.py --train_file ./data/ner/train.txt --dev_file ./data/ner/testa.txt --test_file ./data/ner/testb.txt --checkpoint ./checkpoint/ner_ --caseless --fine_tune --high_way --co_train --least_iters 100
 ```
 
 - Part-of-Speech (POS) Tagging:
 ```
-python train_wc.py --train_file ./data/pos/train.txt --dev_file ./data/pos/testa.txt --test_file ./data/pos/testb.txt --eva_matrix a --checkpoint ./checkpoint/pos_ --lr 0.015 --caseless --fine_tune --high_way --co_train
+python train_wc.py --train_file ./data/pos/train.txt --dev_file ./data/pos/testa.txt --test_file ./data/pos/testb.txt --eva_matrix a --checkpoint ./checkpoint/pos_ --caseless --fine_tune --high_way --co_train
 ```
 
 - Noun Phrase (NP) Chunking:
@@ -115,15 +120,17 @@ For other datasets or tasks, you may wanna try different stopping parameters, es
 
 Here we compare LM-LSTM-CRF with recent state-of-the-art models on the CoNLL 2000 Chunking dataset, the CoNLL 2003 NER dataset, and the WSJ portion of the PTB POS Tagging dataset. All experiments are conducted on a GTX 1080 GPU.
 
+A serious bug was found on the ```bioes_to_span``` function, we are doing experiments and would update the results of NER & Chunking later.
+
 ### NER
 
-When models are only trained on the CoNLL 2003 English NER dataset, the results are summarized as below.
+When models are only trained on the WSJ portion of the PTB POS Tagging dataset, the results are summarized as below.
 
-|Model | Max(F1) | Mean(F1) | Std(F1) | Reported(F1) | Time(h) |
-| ------------- |-------------| -----| -----| -----| ---- |
-| [Lample et al. 2016](https://github.com/glample/tagger) | 91.14 | 90.76 | 0.08 | 90.94 | 46 |
-| [Ma et al. 2016](https://github.com/XuezheMax/LasagneNLP) | 91.67 | 91.37 | 0.17 | 91.21 | 7 |
-| LM-LSTM-CRF | **91.85** | **91.71** | 0.10 | | 6 |
+|Model | Max(Acc) | Mean(Acc) | Std(Acc) | Time(h) |
+| ------------- |-------------| -----| -----| ---- |
+| LM-LSTM-CRF | **91.35** | **91.24** | 0.12 | 4 |
+| -- HighWay | 90.87 | 90.79 | 0.07 | 4 |
+| -- Co-Train | 91.23 | 90.95 | 0.34 | 2 |
 
 ### POS
 
@@ -131,28 +138,80 @@ When models are only trained on the WSJ portion of the PTB POS Tagging dataset, 
 
 |Model | Max(Acc) | Mean(Acc) | Std(Acc) | Reported(Acc) | Time(h) |
 | ------------- |-------------| -----| -----| -----| ---- |
-| [Lample et al. 2016](https://github.com/glample/tagger) | 97.51 | 97.35 | 0.09 | | 37 |
+| [Lample et al. 2016](https://github.com/glample/tagger) | 97.51 | 97.35 | 0.09 | N/A | 37 |
 | [Ma et al. 2016](https://github.com/XuezheMax/LasagneNLP) | 97.46 | 97.42 | 0.04 | 97.55 | 21 |
 | LM-LSTM-CRF | **97.59** | **97.53** | 0.03 | | 16 |
 
-### Chunking
+## Pretrained Model
 
-When models are only trained on the CoNLL 2000 Chunking dataset, the results are summarized as below.
+### Evaluation
 
-|Model | Max(F1) | Mean(F1) | Std(F1) | Time(h) |
-| ------------- |-------------| -----| -----| ----|
-| [Lample et al. 2016](https://github.com/glample/tagger) | 94.49 | 94.37 | 0.07 | 26 |
-| [Ma et al. 2016](https://github.com/XuezheMax/LasagneNLP) | 95.93 | 95.80 | 0.13 | 6|
-| LM-LSTM-CRF | **96.13** | **95.96** | 0.08 | 5 |
+We released pre-trained models on these three tasks. The checkpoint file can be downloaded at the following links. Notice that the NER model and Chunking model (coming soon) are trained on both the training set and the development set:
 
+| WSJ-PTB POS Tagging |  CoNLL03 NER |
+| ------------------- |
+| [Args](https://drive.google.com/a/illinois.edu/file/d/0B587SdKqutQmN1UwNjhHQkhUWEk/view?usp=sharing) | [Args](https://drive.google.com/file/d/1tGAQ0hu9AsIBdrqFn5fmDQ72Pk1I-o74/view?usp=sharing) | 
+| [Model](https://drive.google.com/a/illinois.edu/file/d/0B587SdKqutQmSDlJRGRNandhMGs/view?usp=sharing) | [Model](https://drive.google.com/file/d/1o9kjZV5EcHAhys3GPgl7EPGE5fuXyYjr/view?usp=sharing) | 
+
+Also, ```eval_wc.py``` is provided to load and run these checkpoints. Its usage can be accessed by command ````python eval_wc.py -h````, and a running command example is provided below:
+```
+python eval_wc.py --load_arg checkpoint/ner/ner_4_cwlm_lstm_crf.json --load_check_point checkpoint/ner_ner_4_cwlm_lstm_crf.model --gpu 0 --dev_file ./data/ner/testa.txt --test_file ./data/ner/testb.txt
+```
+
+### Prediction
+
+To annotated raw text, ```seq_wc.py``` is provided to annotate un-annotated text. Its usage can be accessed by command ````python seq_wc.py -h````, and a running command example is provided below:
+```
+python seq_wc.py --load_arg checkpoint/ner/ner_4_cwlm_lstm_crf.json --load_check_point checkpoint/ner_ner_4_cwlm_lstm_crf.model --gpu 0 --input_file ./data/ner2003/test.txt --output_file output.txt
+```
+
+The input format is similar to CoNLL, but each line is required to only contain one field, token. For example, an input file could be:
+
+```
+-DOCSTART-
+
+But
+China
+saw
+their
+luck
+desert
+them
+in
+the
+second
+match
+of
+the
+group
+,
+crashing
+to
+a
+surprise
+2-0
+defeat
+to
+newcomers
+Uzbekistan
+.
+```
+and the corresponding output is:
+
+```
+-DOCSTART- -DOCSTART- -DOCSTART-
+
+But <LOC> China </LOC> saw their luck desert them in the second match of the group , crashing to a surprise 2-0 defeat to newcomers <LOC> Uzbekistan </LOC> . 
+
+```
 
 ## Reference
 
 ```
-@ARTICLE{2017arXiv170904109L,
+@inproceedings{2017arXiv170904109L,
   title = "{Empower Sequence Labeling with Task-Aware Neural Language Model}", 
   author = {{Liu}, L. and {Shang}, J. and {Xu}, F. and {Ren}, X. and {Gui}, H. and {Peng}, J. and {Han}, J.}, 
-  journal = {	arXiv:1709.04109}, 
-  year = 2017, 
+  booktitle={AAAI},
+  year = 2018, 
 }
 ```

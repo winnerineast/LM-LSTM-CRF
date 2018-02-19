@@ -139,7 +139,7 @@ def generate_corpus_char(lines, if_shrink_c_feature=False, c_thresholds=1, if_sh
         for word in feature:
             for tup in word:
                 if tup not in char_count:
-                    char_count[tup] = len(char_count)
+                    char_count[tup] = 0
                 else:
                     char_count[tup] += 1
     if if_shrink_c_feature:
@@ -239,6 +239,45 @@ def read_corpus(lines):
 
     return features, labels
 
+def read_features(lines, multi_docs = True):
+    """
+    convert un-annotated corpus into features
+    """
+    if multi_docs:
+        documents = list()
+        features = list()
+        tmp_fl = list()
+        for line in lines:
+            if_doc_end = (len(line) > 10 and line[0:10] == '-DOCSTART-')
+            if not (line.isspace() or if_doc_end):
+                line = line.split()[0]
+                tmp_fl.append(line)
+            else:
+                if len(tmp_fl) > 0:
+                    features.append(tmp_fl)
+                    tmp_fl = list()
+                if if_doc_end and len(features) > 0:
+                    documents.append(features)
+                    features = list()
+        if len(tmp_fl) > 0:
+            features.append(tmp_fl)
+        if len(features) >0:
+            documents.append(features)
+        return documents
+    else:
+        features = list()
+        tmp_fl = list()
+        for line in lines:
+            if not (line.isspace() or (len(line) > 10 and line[0:10] == '-DOCSTART-')):
+                line = line.split()[0]
+                tmp_fl.append(line)
+            elif len(tmp_fl) > 0:
+                features.append(tmp_fl)
+                tmp_fl = list()
+        if len(tmp_fl) > 0:
+            features.append(tmp_fl)
+     
+        return features
 
 def shrink_embedding(feature_map, word_dict, word_embedding, caseless):
     """
@@ -307,7 +346,7 @@ def encode_corpus_c(lines, f_map, l_map, c_map):
     label_e = encode(labels, l_map)
     return feature_c, feature_e, label_e
 
-def load_embedding(emb_file, delimiter, feature_map, caseless, unk, shrink=False):
+def load_embedding(emb_file, delimiter, feature_map, caseless, unk, shrink_to_train=False):
     """
     load embedding
     """
@@ -321,7 +360,7 @@ def load_embedding(emb_file, delimiter, feature_map, caseless, unk, shrink=False
     for line in open(emb_file, 'r'):
         line = line.split(delimiter)
         vector = list(map(lambda t: float(t), filter(lambda n: n and not n.isspace(), line[1:])))
-        if shrink and line[0] not in feature_set:
+        if shrink_to_train and line[0] not in feature_set:
             continue
         if line[0] == unk:
             word_dict['<unk>'] = len(word_dict)
@@ -345,9 +384,20 @@ def load_embedding(emb_file, delimiter, feature_map, caseless, unk, shrink=False
     embedding_tensor = torch.cat((embedding_tensor_1, rand_embedding_tensor), 0)
     return word_dict, embedding_tensor
 
-def load_embedding_wlm(emb_file, delimiter, feature_map, full_feature_set, caseless, unk, emb_len, shrink=False):
+def load_embedding_wlm(emb_file, delimiter, feature_map, full_feature_set, caseless, unk, emb_len, shrink_to_train=False, shrink_to_corpus=False):
     """
     load embedding, indoc words would be listed before outdoc words
+
+    args: 
+        emb_file: path to embedding file
+        delimiter: delimiter of lines
+        feature_map: word dictionary
+        full_feature_set: all words in the corpus
+        caseless: convert into casesless style
+        unk: string for unknown token
+        emb_len: dimension of embedding vectors
+        shrink_to_train: whether to shrink out-of-training set or not
+        shrink_to_corpus: whether to shrink out-of-corpus or not
     """
     if caseless:
         feature_set = set([key.lower() for key in feature_map])
@@ -373,7 +423,7 @@ def load_embedding_wlm(emb_file, delimiter, feature_map, full_feature_set, casel
         line = line.split(delimiter)
         vector = list(map(lambda t: float(t), filter(lambda n: n and not n.isspace(), line[1:])))
 
-        if shrink and line[0] not in feature_set:
+        if shrink_to_train and line[0] not in feature_set:
             continue
 
         if line[0] == unk:
@@ -383,23 +433,28 @@ def load_embedding_wlm(emb_file, delimiter, feature_map, full_feature_set, casel
         elif line[0] in full_feature_set:
             indoc_embedding_array.append(vector)
             indoc_word_array.append(line[0])
-        else:
+        elif not shrink_to_corpus:
             outdoc_word_array.append(line[0])
             outdoc_embedding_array.append(vector)
     
     embedding_tensor_0 = torch.FloatTensor(np.asarray(indoc_embedding_array))
-    embedding_tensor_1 = torch.FloatTensor(np.asarray(outdoc_embedding_array))
 
-    word_emb_len = embedding_tensor_1.size(1)
-    assert(word_emb_len == emb_len)
+    if not shrink_to_corpus:
+        embedding_tensor_1 = torch.FloatTensor(np.asarray(outdoc_embedding_array))
+        word_emb_len = embedding_tensor_0.size(1)
+        assert(word_emb_len == emb_len)
 
-    embedding_tensor = torch.cat([rand_embedding_tensor, embedding_tensor_0, embedding_tensor_1], 0)
+    if shrink_to_corpus:
+        embedding_tensor = torch.cat([rand_embedding_tensor, embedding_tensor_0], 0)
+    else:
+        embedding_tensor = torch.cat([rand_embedding_tensor, embedding_tensor_0, embedding_tensor_1], 0)
 
     for word in indoc_word_array:
         word_dict[word] = len(word_dict)
     in_doc_num = len(word_dict)
-    for word in outdoc_word_array:
-        word_dict[word] = len(word_dict)
+    if  not shrink_to_corpus:
+        for word in outdoc_word_array:
+            word_dict[word] = len(word_dict)
 
     return word_dict, embedding_tensor, in_doc_num
 
@@ -500,10 +555,9 @@ def construct_bucket_vb_wc(word_features, forw_features, fea_len, input_labels, 
 
         padded_feature = f_f + [pad_char_feature] * (buckets_len[idx] - len(f_f))  # pad feature with <'\n'>, at least one
 
-        padded_feature_len = f_l + [1] * (thresholds[idx] - len(f_l))  # pad feature length with <'\n'>, at least one
-        padded_feature_len_cum = [tup for tup in itertools.accumulate(
-            padded_feature_len)]  # start from 0, but the first is ' ', so the position need not to be -1
-        buckets[idx][0].append(padded_feature)#char
+        padded_feature_len = f_l + [1] * (thresholds[idx] - len(f_l)) # pad feature length with <'\n'>, at least one
+        padded_feature_len_cum = list(itertools.accumulate(padded_feature_len)) # start from 0, but the first is ' ', so the position need not to be -1
+        buckets[idx][0].append(padded_feature) # char
         buckets[idx][1].append(padded_feature_len_cum)
         buckets[idx][2].append(padded_feature[::-1])
         buckets[idx][3].append([buckets_len[idx] - 1] + [buckets_len[idx] - 1 - tup for tup in padded_feature_len_cum[:-1]])
@@ -553,8 +607,7 @@ def construct_bucket_gd(input_features, input_labels, thresholds, pad_feature, p
         buckets[idx][0].append(feature + [pad_feature] * (thresholds[idx] - cur_len))
         buckets[idx][1].append(label[1:] + [pad_label] * (thresholds[idx] - cur_len))
         buckets[idx][2].append(label + [pad_label] * (thresholds[idx] - cur_len_1))
-    bucket_dataset = [CRFDataset(torch.LongTensor(bucket[0]), torch.LongTensor(bucket[1]), torch.LongTensor(bucket[2]))
-                      for bucket in buckets]
+    bucket_dataset = [CRFDataset(torch.LongTensor(bucket[0]), torch.LongTensor(bucket[1]), torch.LongTensor(bucket[2])) for bucket in buckets]
     return bucket_dataset
 
 
@@ -649,7 +702,7 @@ def iobes_to_spans(sequence, lut, strict_iob2=False):
                 chunks.append('@'.join(current))
             current = [label.replace('B-', ''), '%d' % i]
 
-        if label.startswith('S-'):
+        elif label.startswith('S-'):
 
             if current is not None:
                 chunks.append('@'.join(current))

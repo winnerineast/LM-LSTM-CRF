@@ -26,15 +26,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Learning with LM-LSTM-CRF together with Language Model')
     parser.add_argument('--rand_embedding', action='store_true', help='random initialize word embedding')
     parser.add_argument('--emb_file', default='./embedding/glove.6B.100d.txt', help='path to pre-trained embedding')
-    parser.add_argument('--train_file', default='./data/ner2003/eng.train.iobes', help='path to training file')
-    parser.add_argument('--dev_file', default='./data/ner2003/eng.testa.iobes', help='path to development file')
-    parser.add_argument('--test_file', default='./data/ner2003/eng.testb.iobes', help='path to test file')
+    parser.add_argument('--train_file', default='./data/ner/eng.train.iobes', help='path to training file')
+    parser.add_argument('--dev_file', default='./data/ner/eng.testa.iobes', help='path to development file')
+    parser.add_argument('--test_file', default='./data/ner/eng.testb.iobes', help='path to test file')
     parser.add_argument('--gpu', type=int, default=0, help='gpu id')
     parser.add_argument('--batch_size', type=int, default=10, help='batch_size')
     parser.add_argument('--unk', default='unk', help='unknow-token in pre-trained embedding')
     parser.add_argument('--char_hidden', type=int, default=300, help='dimension of char-level layers')
     parser.add_argument('--word_hidden', type=int, default=300, help='dimension of word-level layers')
-    parser.add_argument('--drop_out', type=float, default=0.5, help='dropout ratio')
+    parser.add_argument('--drop_out', type=float, default=0.55, help='dropout ratio')
     parser.add_argument('--epoch', type=int, default=200, help='maximum epoch number')
     parser.add_argument('--start_epoch', type=int, default=0, help='start point of epoch')
     parser.add_argument('--checkpoint', default='./checkpoint/', help='checkpoint path')
@@ -43,7 +43,7 @@ if __name__ == "__main__":
     parser.add_argument('--word_dim', type=int, default=100, help='dimension of word embedding')
     parser.add_argument('--char_layers', type=int, default=1, help='number of char level layers')
     parser.add_argument('--word_layers', type=int, default=1, help='number of word level layers')
-    parser.add_argument('--lr', type=float, default=0.01, help='initial learning rate')
+    parser.add_argument('--lr', type=float, default=0.015, help='initial learning rate')
     parser.add_argument('--lr_decay', type=float, default=0.05, help='decay ratio of learning rate')
     parser.add_argument('--fine_tune', action='store_false', help='fine tune the diction of word embedding or not')
     parser.add_argument('--load_check_point', default='', help='path previous checkpoint that want to be loaded')
@@ -60,6 +60,7 @@ if __name__ == "__main__":
     parser.add_argument('--highway_layers', type=int, default=1, help='number of highway layers')
     parser.add_argument('--eva_matrix', choices=['a', 'fa'], default='fa', help='use f1 and accuracy or accuracy alone')
     parser.add_argument('--least_iters', type=int, default=50, help='at least train how many epochs before stop')
+    parser.add_argument('--shrink_embedding', action='store_true', help='shrink the embedding dictionary to corpus (open this if pre-trained embedding dictionary is too large, but disable this may yield better results on external corpus)')
     args = parser.parse_args()
 
     if args.gpu >= 0:
@@ -101,14 +102,17 @@ if __name__ == "__main__":
         f_set = {v for v in f_map}
         f_map = utils.shrink_features(f_map, train_features, args.mini_count)
 
-        dt_f_set = functools.reduce(lambda x, y: x | y, map(lambda t: set(t), dev_features), f_set)
-
-        if not args.rand_embedding:
+        if args.rand_embedding:
+            print("embedding size: '{}'".format(len(f_map)))
+            in_doc_words = len(f_map)
+        else:
+            dt_f_set = functools.reduce(lambda x, y: x | y, map(lambda t: set(t), dev_features), f_set)
+            dt_f_set = functools.reduce(lambda x, y: x | y, map(lambda t: set(t), test_features), dt_f_set)
             print("feature size: '{}'".format(len(f_map)))
             print('loading embedding')
             if args.fine_tune:  # which means does not do fine-tune
                 f_map = {'<eof>': 0}
-            f_map, embedding_tensor, in_doc_words = utils.load_embedding_wlm(args.emb_file, ' ', f_map, dt_f_set, args.caseless, args.unk, args.word_dim)
+            f_map, embedding_tensor, in_doc_words = utils.load_embedding_wlm(args.emb_file, ' ', f_map, dt_f_set, args.caseless, args.unk, args.word_dim, shrink_to_corpus=args.shrink_embedding)
             print("embedding size: '{}'".format(len(f_map)))
 
         l_set = functools.reduce(lambda x, y: x | y, map(lambda t: set(t), dev_labels))
@@ -199,7 +203,8 @@ if __name__ == "__main__":
         epoch_loss /= tot_length
 
         # update lr
-        utils.adjust_learning_rate(optimizer, args.lr / (1 + (args.start_epoch + 1) * args.lr_decay))
+        if args.update == 'sgd':
+            utils.adjust_learning_rate(optimizer, args.lr / (1 + (args.start_epoch + 1) * args.lr_decay))
 
         # eval & save check_point
 

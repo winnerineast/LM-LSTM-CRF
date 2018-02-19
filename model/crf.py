@@ -70,15 +70,15 @@ class CRF_S(nn.Module):
         args: 
             feats (batch_size, seq_len, hidden_dim) : input score from previous layers
         return:
-            output from crf layer (batch_size, seq_len, tag_size, tag_size)
+            output from crf layer ( (batch_size * seq_len), tag_size, tag_size)
         """
         
-        ins_num = feats.size(0)
-        scores = self.hidden2tag(feats)
-        crf_scores = scores.view(-1, self.tagset_size, 1).expand(ins_num, self.tagset_size, self.tagset_size) + self.transitions.view(1, self.tagset_size, self.tagset_size).expand(ins_num, self.tagset_size, self.tagset_size)
+        scores = self.hidden2tag(feats).view(-1, self.tagset_size, 1)
+        ins_num = scores.size(0)
+        crf_scores = scores.expand(ins_num, self.tagset_size, self.tagset_size) + self.transitions.view(1, self.tagset_size, self.tagset_size).expand(ins_num, self.tagset_size, self.tagset_size)
 
         return crf_scores
-
+        
 class CRFRepack:
     """Packer for word level model
     
@@ -192,7 +192,7 @@ class CRFRepack_WC:
             b_p = autograd.Variable((b_p[:, 0:mlen[1]] - ocl + mlen[0]).transpose(0, 1))
             w_f = autograd.Variable(w_f[:, 0:mlen[1]].transpose(0, 1))
             tg_v = autograd.Variable(target[:, 0:mlen[1]].transpose(0, 1)).unsqueeze(2)
-            mask_v = autograd.Variable(mask[:, 0:mlen[1]].transpose(0, 1))
+            mask_v = autograd.Variable(mask[:, 0:mlen[1]].transpose(0, 1)).contiguous()
         return f_f, f_p, b_f, b_p, w_f, tg_v, mask_v
 
     def convert_for_eval(self, target):
@@ -293,7 +293,7 @@ class CRFLoss_vb(nn.Module):
         # the first score should start with <start>
         _, inivalues = seq_iter.__next__()  # bat_size * from_target_size * to_target_size
         # only need start from start_tag
-        partition = inivalues[:, self.start_tag, :]  # bat_size * to_target_size
+        partition = inivalues[:, self.start_tag, :].clone()  # bat_size * to_target_size
         # iter over last scores
         for idx, cur_values in seq_iter:
             # previous to_target is current from_target
@@ -302,12 +302,9 @@ class CRFLoss_vb(nn.Module):
             cur_values = cur_values + partition.contiguous().view(bat_size, self.tagset_size, 1).expand(bat_size, self.tagset_size, self.tagset_size)
             cur_partition = utils.log_sum_exp(cur_values, self.tagset_size)
                   # (bat_size * from_target * to_target) -> (bat_size * to_target)
-            partition = utils.switch(partition, cur_partition,
-                                     mask[idx].view(bat_size, 1).expand(bat_size, self.tagset_size)).view(bat_size, -1)
-            # the following two may achieve higher speed, but raise run-time error
-            # new_partition = partition.clone()
-            # new_partition.masked_scatter_(mask[idx].view(-1, 1).expand(bat_size, self.tagset_size), cur_partition)  #0 for partition, 1 for cur_partition
-            # partition = new_partition
+            # partition = utils.switch(partition, cur_partition, mask[idx].view(bat_size, 1).expand(bat_size, self.tagset_size)).view(bat_size, -1)
+            mask_idx = mask[idx, :].view(bat_size, 1).expand(bat_size, self.tagset_size)
+            partition.masked_scatter_(mask_idx, cur_partition.masked_select(mask_idx))  #0 for partition, 1 for cur_partition
             
         #only need end at end_tag
         partition = partition[:, self.end_tag].sum()
